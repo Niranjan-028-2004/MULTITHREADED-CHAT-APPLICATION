@@ -2,41 +2,41 @@ import java.io.*;
 import java.net.*;
 
 public class ChatClient {
-    private static final String SERVER_IP = "localhost"; // Change if server is remote
+    private static final String SERVER_ADDRESS = "localhost";
     private static final int SERVER_PORT = 12345;
 
-    public static void main(String[] args) throws IOException {
-        Socket socket = new Socket(SERVER_IP, SERVER_PORT);
-        System.out.println("🔌 Connected to chat server");
+    public static void main(String[] args) {
+        try (Socket socket = new Socket(SERVER_ADDRESS, SERVER_PORT);
+             BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
 
-        BufferedReader input = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        PrintWriter output = new PrintWriter(socket.getOutputStream(), true);
+            System.out.print("Enter your name: ");
+            String name = userInput.readLine();
+            out.println(name);
 
-        BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
-
-        // Thread to read messages from the server
-        Thread readThread = new Thread(() -> {
-            String messageFromServer;
-            try {
-                while ((messageFromServer = input.readLine()) != null) {
-                    System.out.println("👥 " + messageFromServer);
+            // Thread to read messages from server
+            Thread readThread = new Thread(() -> {
+                try {
+                    String serverMsg;
+                    while ((serverMsg = in.readLine()) != null) {
+                        System.out.println(serverMsg);
+                    }
+                } catch (IOException e) {
+                    System.out.println("Disconnected from server.");
                 }
-            } catch (IOException e) {
-                System.out.println("❌ Connection closed.");
+            });
+
+            readThread.start();
+
+            // Main thread handles sending messages
+            String msg;
+            while ((msg = userInput.readLine()) != null) {
+                out.println(msg);
             }
-        });
-        readThread.start();
 
-        // Main thread: read user input and send to server
-        System.out.print("Enter your name: ");
-        String name = userInput.readLine();
-        output.println(name + " has joined the chat.");
-
-        String userMessage;
-        while ((userMessage = userInput.readLine()) != null) {
-            output.println(name + ": " + userMessage);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
-
-        socket.close();
     }
 }
