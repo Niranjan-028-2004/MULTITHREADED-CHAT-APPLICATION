@@ -4,69 +4,76 @@ import java.util.*;
 
 public class ChatServer {
     private static final int PORT = 12345;
-    private static Set<PrintWriter> clientWriters = new HashSet<>();
+    private static Set<ClientHandler> clientHandlers = Collections.synchronizedSet(new HashSet<>());
 
-    public static void main(String[] args) throws IOException {
-        System.out.println("💬 Chat Server started...");
-        ServerSocket serverSocket = new ServerSocket(PORT);
+    public static void main(String[] args) {
+        System.out.println("Server is running...");
 
-        while (true) {
-            // Accept a new client
-            Socket clientSocket = serverSocket.accept();
-            System.out.println("✅ New client connected: " + clientSocket);
-            
-            // Handle in a new thread
-            new ClientHandler(clientSocket).start();
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+            while (true) {
+                Socket socket = serverSocket.accept();
+                System.out.println("New client connected!");
+                ClientHandler handler = new ClientHandler(socket);
+                clientHandlers.add(handler);
+                handler.start();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
-    // Inner class to handle client communication
-    private static class ClientHandler extends Thread {
-        private Socket socket;
-        private PrintWriter out;
-        private BufferedReader in;
-
-        public ClientHandler(Socket socket) {
-            this.socket = socket;
+    // Broadcast message to all clients
+    public static void broadcast(String message, ClientHandler sender) {
+        synchronized (clientHandlers) {
+            for (ClientHandler ch : clientHandlers) {
+                if (ch != sender) {
+                    ch.sendMessage(message);
+                }
+            }
         }
+    }
 
-        public void run() {
+    // Remove a client
+    public static void removeClient(ClientHandler handler) {
+        clientHandlers.remove(handler);
+    }
+}
+
+class ClientHandler extends Thread {
+    private Socket socket;
+    private PrintWriter out;
+    private BufferedReader in;
+
+    public ClientHandler(Socket socket) {
+        this.socket = socket;
+    }
+
+    public void run() {
+        try {
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+
+            String name = in.readLine();
+            System.out.println(name + " has joined the chat.");
+
+            String msg;
+            while ((msg = in.readLine()) != null) {
+                System.out.println(name + ": " + msg);
+                ChatServer.broadcast(name + ": " + msg, this);
+            }
+        } catch (IOException e) {
+            System.out.println("Client disconnected.");
+        } finally {
             try {
-                // Setup input/output
-                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                out = new PrintWriter(socket.getOutputStream(), true);
-
-                // Add this client's writer to the set
-                synchronized (clientWriters) {
-                    clientWriters.add(out);
-                }
-
-                // Read and broadcast messages
-                String message;
-                while ((message = in.readLine()) != null) {
-                    System.out.println("📨 Message received: " + message);
-                    broadcast(message);
-                }
-
+                socket.close();
             } catch (IOException e) {
-                System.out.println("❌ Error: " + e.getMessage());
-            } finally {
-                // Remove this client on disconnect
-                try {
-                    socket.close();
-                } catch (IOException e) {}
-                synchronized (clientWriters) {
-                    clientWriters.remove(out);
-                }
+                e.printStackTrace();
             }
+            ChatServer.removeClient(this);
         }
+    }
 
-        private void broadcast(String message) {
-            synchronized (clientWriters) {
-                for (PrintWriter writer : clientWriters) {
-                    writer.println(message);
-                }
-            }
-        }
+    public void sendMessage(String message) {
+        out.println(message);
     }
 }
